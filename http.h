@@ -1,13 +1,36 @@
 /*
- * HTTP/1.1 protocol in C implementation
+ * http.h — A lightweight single-header HTTP library for C
  *
- * I tried to implement as many features as I can.
- * This header-only library was made in educational purposes
- * I highly do not recomend to use it in produnction.
+ * This library provides both HTTP client and HTTP server functionality
+ * with zero external dependencies. It is designed to be simple, minimal,
+ * and portable across POSIX-compliant systems.
  *
- * HTTP_Server server = http_server_create(8080);
- * http_handle(&server, index_handler)
- * http_handle(&server, persons_handler)
+ * Features:
+ *   - HTTP Client:
+ *       • Build and send HTTP requests (GET, POST, etc.)
+ *       • Parse HTTP responses
+ *       • Header and body management
+ *
+ *   - HTTP Server:
+ *       • Create lightweight HTTP servers
+ *       • Register request handlers by route
+ *       • Built-in error handling
+ *
+ *   - Utilities:
+ *       • String builder for efficient text operations
+ *       • File reading helpers
+ *       • Complete set of HTTP status codes and Content-Type definitions
+ *
+ * Usage:
+ *   - To include declarations:
+ *       #include "http.h"
+ *
+ *   - To include implementation:
+ *       #define HTTP_IMPLEMENTATION
+ *       #include "http.h"
+ *
+ * License:
+ *   MIT License
  *
  */
 
@@ -37,139 +60,147 @@
 #include <errno.h>
 #include <netinet/in.h>
 #include <sys/stat.h>
+#include <netdb.h>
 
 #define UNUSED(x) (void)(x)
 
 #define PROTOCOL "HTTP/1.1"
 
 // 1xx - Informational
-#define STATUS_CONTINUE						   100
-#define STATUS_SWITCHING_PROTOCOLS			   101
-#define STATUS_PROCESSING					   102
-#define STATUS_EARLY_HINTS					   103
+#define STATUS_CONTINUE 100
+#define STATUS_SWITCHING_PROTOCOLS 101
+#define STATUS_PROCESSING 102
+#define STATUS_EARLY_HINTS 103
 
 // 2xx - Success
-#define STATUS_OK							   200
-#define STATUS_CREATED						   201
-#define STATUS_ACCEPTED						   202
-#define STATUS_NON_AUTHORITATIVE_INFORMATION   203
-#define STATUS_NO_CONTENT					   204
-#define STATUS_RESET_CONTENT				   205
-#define STATUS_PARTIAL_CONTENT				   206
-#define STATUS_MULTI_STATUS					   207
-#define STATUS_ALREADY_REPORTED				   208
-#define STATUS_IM_USED						   226
+#define STATUS_OK 200
+#define STATUS_CREATED 201
+#define STATUS_ACCEPTED 202
+#define STATUS_NON_AUTHORITATIVE_INFORMATION 203
+#define STATUS_NO_CONTENT 204
+#define STATUS_RESET_CONTENT 205
+#define STATUS_PARTIAL_CONTENT 206
+#define STATUS_MULTI_STATUS 207
+#define STATUS_ALREADY_REPORTED 208
+#define STATUS_IM_USED 226
 
 // 3xx - Redirection
-#define STATUS_MULTIPLE_CHOICES				   300
-#define STATUS_MOVED_PERMANENTLY			   301
-#define STATUS_FOUND						   302
-#define STATUS_SEE_OTHER					   303
-#define STATUS_NOT_MODIFIED					   304
-#define STATUS_USE_PROXY					   305
-#define STATUS_TEMPORARY_REDIRECT			   307
-#define STATUS_PERMANENT_REDIRECT			   308
+#define STATUS_MULTIPLE_CHOICES 300
+#define STATUS_MOVED_PERMANENTLY 301
+#define STATUS_FOUND 302
+#define STATUS_SEE_OTHER 303
+#define STATUS_NOT_MODIFIED 304
+#define STATUS_USE_PROXY 305
+#define STATUS_TEMPORARY_REDIRECT 307
+#define STATUS_PERMANENT_REDIRECT 308
 
 // 4xx - Client Error
-#define STATUS_BAD_REQUEST					   400
-#define STATUS_UNAUTHORIZED					   401
-#define STATUS_PAYMENT_REQUIRED				   402
-#define STATUS_FORBIDDEN					   403
-#define STATUS_NOT_FOUND					   404
-#define STATUS_METHOD_NOT_ALLOWED			   405
-#define STATUS_NOT_ACCEPTABLE				   406
-#define STATUS_PROXY_AUTHENTICATION_REQUIRED   407
-#define STATUS_REQUEST_TIMEOUT				   408
-#define STATUS_CONFLICT						   409
-#define STATUS_GONE							   410
-#define STATUS_LENGTH_REQUIRED				   411
-#define STATUS_PRECONDITION_FAILED			   412
-#define STATUS_PAYLOAD_TOO_LARGE			   413
-#define STATUS_URI_TOO_LONG					   414
-#define STATUS_UNSUPPORTED_MEDIA_TYPE		   415
-#define STATUS_RANGE_NOT_SATISFIABLE		   416
-#define STATUS_EXPECTATION_FAILED			   417
-#define STATUS_IM_A_TEAPOT					   418
-#define STATUS_MISDIRECTED_REQUEST			   421
-#define STATUS_UNPROCESSABLE_ENTITY			   422
-#define STATUS_LOCKED						   423
-#define STATUS_FAILED_DEPENDENCY			   424
-#define STATUS_TOO_EARLY					   425
-#define STATUS_UPGRADE_REQUIRED				   426
-#define STATUS_PRECONDITION_REQUIRED		   428
-#define STATUS_TOO_MANY_REQUESTS			   429
+#define STATUS_BAD_REQUEST 400
+#define STATUS_UNAUTHORIZED 401
+#define STATUS_PAYMENT_REQUIRED 402
+#define STATUS_FORBIDDEN 403
+#define STATUS_NOT_FOUND 404
+#define STATUS_METHOD_NOT_ALLOWED 405
+#define STATUS_NOT_ACCEPTABLE 406
+#define STATUS_PROXY_AUTHENTICATION_REQUIRED 407
+#define STATUS_REQUEST_TIMEOUT 408
+#define STATUS_CONFLICT 409
+#define STATUS_GONE 410
+#define STATUS_LENGTH_REQUIRED 411
+#define STATUS_PRECONDITION_FAILED 412
+#define STATUS_PAYLOAD_TOO_LARGE 413
+#define STATUS_URI_TOO_LONG 414
+#define STATUS_UNSUPPORTED_MEDIA_TYPE 415
+#define STATUS_RANGE_NOT_SATISFIABLE 416
+#define STATUS_EXPECTATION_FAILED 417
+#define STATUS_IM_A_TEAPOT 418
+#define STATUS_MISDIRECTED_REQUEST 421
+#define STATUS_UNPROCESSABLE_ENTITY 422
+#define STATUS_LOCKED 423
+#define STATUS_FAILED_DEPENDENCY 424
+#define STATUS_TOO_EARLY 425
+#define STATUS_UPGRADE_REQUIRED 426
+#define STATUS_PRECONDITION_REQUIRED 428
+#define STATUS_TOO_MANY_REQUESTS 429
 #define STATUS_REQUEST_HEADER_FIELDS_TOO_LARGE 431
-#define STATUS_UNAVAILABLE_FOR_LEGAL_REASONS   451
+#define STATUS_UNAVAILABLE_FOR_LEGAL_REASONS 451
 
 // 5xx - Server Error
-#define STATUS_INTERNAL_SERVER_ERROR		   500
-#define STATUS_NOT_IMPLEMENTED				   501
-#define STATUS_BAD_GATEWAY					   502
-#define STATUS_SERVICE_UNAVAILABLE			   503
-#define STATUS_GATEWAY_TIMEOUT				   504
-#define STATUS_HTTP_VERSION_NOT_SUPPORTED	   505
-#define STATUS_VARIANT_ALSO_NEGOTIATES		   506
-#define STATUS_INSUFFICIENT_STORAGE			   507
-#define STATUS_LOOP_DETECTED				   508
-#define STATUS_NOT_EXTENDED					   510
+#define STATUS_INTERNAL_SERVER_ERROR 500
+#define STATUS_NOT_IMPLEMENTED 501
+#define STATUS_BAD_GATEWAY 502
+#define STATUS_SERVICE_UNAVAILABLE 503
+#define STATUS_GATEWAY_TIMEOUT 504
+#define STATUS_HTTP_VERSION_NOT_SUPPORTED 505
+#define STATUS_VARIANT_ALSO_NEGOTIATES 506
+#define STATUS_INSUFFICIENT_STORAGE 507
+#define STATUS_LOOP_DETECTED 508
+#define STATUS_NOT_EXTENDED 510
 #define STATUS_NETWORK_AUTHENTICATION_REQUIRED 511
 
 // Text types
-#define CONTENT_TYPE_TEXT_PLAIN				  "text/plain"
-#define CONTENT_TYPE_TEXT_HTML				  "text/html"
-#define CONTENT_TYPE_TEXT_CSS				  "text/css"
-#define CONTENT_TYPE_TEXT_JAVASCRIPT		  "text/javascript"   // deprecated
-#define CONTENT_TYPE_APPLICATION_JAVASCRIPT   "application/javascript" // preferred
+#define CONTENT_TYPE_TEXT_PLAIN "text/plain"
+#define CONTENT_TYPE_TEXT_HTML "text/html"
+#define CONTENT_TYPE_TEXT_CSS "text/css"
+#define CONTENT_TYPE_TEXT_JAVASCRIPT "text/javascript"
+#define CONTENT_TYPE_APPLICATION_JAVASCRIPT "application/javascript"
 
 // Application types
-#define CONTENT_TYPE_APPLICATION_JSON		  "application/json"
-#define CONTENT_TYPE_APPLICATION_XML		  "application/xml"
-#define CONTENT_TYPE_APPLICATION_X_WWW_FORM   "application/x-www-form-urlencoded"
+#define CONTENT_TYPE_APPLICATION_JSON "application/json"
+#define CONTENT_TYPE_APPLICATION_XML "application/xml"
+#define CONTENT_TYPE_APPLICATION_X_WWW_FORM "application/x-www-form-urlencoded"
 #define CONTENT_TYPE_APPLICATION_OCTET_STREAM "application/octet-stream"
-#define CONTENT_TYPE_APPLICATION_PDF		  "application/pdf"
-#define CONTENT_TYPE_APPLICATION_ZIP		  "application/zip"
-#define CONTENT_TYPE_APPLICATION_GZIP		  "application/gzip"
-#define CONTENT_TYPE_APPLICATION_TAR		  "application/x-tar"
-#define CONTENT_TYPE_APPLICATION_RAR		  "application/vnd.rar"
-#define CONTENT_TYPE_APPLICATION_7Z			  "application/x-7z-compressed"
-#define CONTENT_TYPE_APPLICATION_SQL		  "application/sql"
-#define CONTENT_TYPE_APPLICATION_GRAPHQL	  "application/graphql"
+#define CONTENT_TYPE_APPLICATION_PDF "application/pdf"
+#define CONTENT_TYPE_APPLICATION_ZIP "application/zip"
+#define CONTENT_TYPE_APPLICATION_GZIP "application/gzip"
+#define CONTENT_TYPE_APPLICATION_TAR "application/x-tar"
+#define CONTENT_TYPE_APPLICATION_RAR "application/vnd.rar"
+#define CONTENT_TYPE_APPLICATION_7Z "application/x-7z-compressed"
+#define CONTENT_TYPE_APPLICATION_SQL "application/sql"
+#define CONTENT_TYPE_APPLICATION_GRAPHQL "application/graphql"
 
 // Image types
-#define CONTENT_TYPE_IMAGE_PNG				  "image/png"
-#define CONTENT_TYPE_IMAGE_JPEG				  "image/jpeg"
-#define CONTENT_TYPE_IMAGE_GIF				  "image/gif"
-#define CONTENT_TYPE_IMAGE_WEBP				  "image/webp"
-#define CONTENT_TYPE_IMAGE_SVG_XML			  "image/svg+xml"
-#define CONTENT_TYPE_IMAGE_BMP				  "image/bmp"
-#define CONTENT_TYPE_IMAGE_TIFF				  "image/tiff"
-#define CONTENT_TYPE_IMAGE_ICON				  "image/x-icon"
+#define CONTENT_TYPE_IMAGE_PNG "image/png"
+#define CONTENT_TYPE_IMAGE_JPEG "image/jpeg"
+#define CONTENT_TYPE_IMAGE_GIF "image/gif"
+#define CONTENT_TYPE_IMAGE_WEBP "image/webp"
+#define CONTENT_TYPE_IMAGE_SVG_XML "image/svg+xml"
+#define CONTENT_TYPE_IMAGE_BMP "image/bmp"
+#define CONTENT_TYPE_IMAGE_TIFF "image/tiff"
+#define CONTENT_TYPE_IMAGE_ICON "image/x-icon"
 
 // Audio types
-#define CONTENT_TYPE_AUDIO_MPEG				  "audio/mpeg"
-#define CONTENT_TYPE_AUDIO_OGG				  "audio/ogg"
-#define CONTENT_TYPE_AUDIO_WAV				  "audio/wav"
-#define CONTENT_TYPE_AUDIO_WEBM				  "audio/webm"
-#define CONTENT_TYPE_AUDIO_AAC				  "audio/aac"
-#define CONTENT_TYPE_AUDIO_FLAC				  "audio/flac"
+#define CONTENT_TYPE_AUDIO_MPEG "audio/mpeg"
+#define CONTENT_TYPE_AUDIO_OGG "audio/ogg"
+#define CONTENT_TYPE_AUDIO_WAV "audio/wav"
+#define CONTENT_TYPE_AUDIO_WEBM "audio/webm"
+#define CONTENT_TYPE_AUDIO_AAC "audio/aac"
+#define CONTENT_TYPE_AUDIO_FLAC "audio/flac"
 
 // Video types
-#define CONTENT_TYPE_VIDEO_MP4				  "video/mp4"
-#define CONTENT_TYPE_VIDEO_MPEG				  "video/mpeg"
-#define CONTENT_TYPE_VIDEO_WEBM				  "video/webm"
-#define CONTENT_TYPE_VIDEO_OGG				  "video/ogg"
-#define CONTENT_TYPE_VIDEO_X_MSVIDEO		  "video/x-msvideo"   // .avi
-#define CONTENT_TYPE_VIDEO_X_FLV			  "video/x-flv"
+#define CONTENT_TYPE_VIDEO_MP4 "video/mp4"
+#define CONTENT_TYPE_VIDEO_MPEG "video/mpeg"
+#define CONTENT_TYPE_VIDEO_WEBM "video/webm"
+#define CONTENT_TYPE_VIDEO_OGG "video/ogg"
+#define CONTENT_TYPE_VIDEO_X_MSVIDEO "video/x-msvideo"
+#define CONTENT_TYPE_VIDEO_X_FLV "video/x-flv"
 
 // Multipart types
-#define CONTENT_TYPE_MULTIPART_FORM_DATA	  "multipart/form-data"
-#define CONTENT_TYPE_MULTIPART_BYTERANGES	  "multipart/byteranges"
+#define CONTENT_TYPE_MULTIPART_FORM_DATA "multipart/form-data"
+#define CONTENT_TYPE_MULTIPART_BYTERANGES "multipart/byteranges"
 
 // Methods
 #define METHOD_GET "GET"
 #define METHOD_POST "POST"
 #define METHOD_HEAD "HEAD"
 #define METHOD_DELETE "DELETE"
+
+typedef enum {
+	HTTP_ERROR_NULL = 0,
+	HTTP_ERROR_PARSING_STATUS_LINE,
+	HTTP_ERROR_PARSING_HEADERS,
+	HTTP_ERROR_MAKING_REQUEST,
+} HTTP_Error;
 
 // String
 
@@ -227,7 +258,7 @@ typedef struct {
 	}
 
 HTTP_Request http_req_create();
-HTTP_Request http_req_parse(uint8_t *bytes, bool *err);
+HTTP_Request http_req_parse(uint8_t *bytes, HTTP_Error *err);
 void http_req_add_header(HTTP_Request *hr, const char *key, const char *value);
 void http_req_set_status_line(HTTP_Request *hr, const char *method, const char *target);
 void http_req_set_body(HTTP_Request *hr, uint8_t *body, size_t len);
@@ -244,12 +275,13 @@ typedef struct {
 } HTTP_Response;
 
 HTTP_Response http_resp_create();
-HTTP_Response http_resp_parse(uint8_t *bytes, bool *err);
+HTTP_Response http_resp_parse(uint8_t *bytes, HTTP_Error *err);
 void http_resp_add_header(HTTP_Response *hr, const char *key, const char *value);
 void http_resp_set_status_line(HTTP_Response *hr, uint16_t status_code, const char *reason_phrase);
 void http_resp_set_body(HTTP_Response *hr, uint8_t *body, size_t len);
 void http_resp_destroy(HTTP_Response *hr);
 char *http_resp_header_to_str(HTTP_Response *hr);
+HTTP_Response http_make_request(HTTP_Request *req, const char *host, uint16_t port, HTTP_Error *err);
 
 typedef void (*HTTP_HandleFunc)(void *ctx, HTTP_Request *req, HTTP_Response *resp);
 
@@ -270,6 +302,7 @@ int http_server_serve_file(HTTP_Server *serv, const char *target, const char *co
 
 #endif // HTTP_H
 
+#define HTTP_IMPLEMENTATION
 #ifdef HTTP_IMPLEMENTATION
 
 // String
@@ -299,7 +332,7 @@ uint8_t *read_file(const char *path, size_t *out_size) {
 // HTTP headers
 
 HTTP_Headers http_headers_create(size_t cap) {
-	if (cap == 0) cap = 32;
+	if (cap == 0) cap = 16;
 
 	return (HTTP_Headers) {
 		.headers = (HTTP_Header *) malloc(sizeof(HTTP_Header) * cap),
@@ -340,11 +373,104 @@ void http_headers_destroy(HTTP_Headers *hh) {
 
 // HTTP Request
 
+static ssize_t send_all(int sock, const void *buf, size_t len) {
+	size_t sent = 0;
+	const uint8_t *b = (const uint8_t*) buf;
+	while (sent < len) {
+		ssize_t s = send(sock, b + sent, len - sent, 0);
+		if (s <= 0) return -1;
+		sent += (size_t)s;
+	}
+	return (ssize_t)sent;
+}
+
+HTTP_Response http_make_request(HTTP_Request *req, const char *host, uint16_t port, HTTP_Error *err) {
+	char *header = http_req_header_to_str(req);
+	if (!header) return (HTTP_Response){0};
+	size_t header_len = strlen(header);
+
+	size_t req_len = header_len + req->body_len;
+	if (req_len > 8 * 1024) { fprintf(stderr, "request too large\n"); return (HTTP_Response){0}; }
+
+	uint8_t request[8 * 1024];
+	memcpy(request, header, header_len);
+	if (req->body_len > 0 && req->body != NULL)
+		memcpy(request + header_len, req->body, req->body_len);
+
+	struct hostent *h = gethostbyname(host);
+	if (!h) { *err = HTTP_ERROR_MAKING_REQUEST; return (HTTP_Response){0}; }
+
+	int sock = socket(AF_INET, SOCK_STREAM, 0);
+	if (sock < 0) { *err = HTTP_ERROR_MAKING_REQUEST; return (HTTP_Response){0}; }
+
+	struct sockaddr_in addr = {0};
+	addr.sin_family = AF_INET;
+	addr.sin_port = htons(port);
+
+	if (h->h_addrtype == AF_INET) {
+		memcpy(&addr.sin_addr, h->h_addr_list[0], sizeof(struct in_addr));
+	} else {
+		close(sock);
+		*err = HTTP_ERROR_MAKING_REQUEST;
+		return (HTTP_Response){0};
+	}
+
+	if (connect(sock, (struct sockaddr *)&addr, sizeof addr) < 0) {
+		close(sock);
+		*err = HTTP_ERROR_MAKING_REQUEST;
+		return (HTTP_Response){0};
+	}
+
+	if (send_all(sock, request, req_len) != (ssize_t)req_len) {
+		close(sock);
+		*err = HTTP_ERROR_MAKING_REQUEST;
+		return (HTTP_Response){0};
+	}
+
+	uint8_t *resp_buf = (uint8_t *) malloc(1024 * 1024);
+	if (!resp_buf) {
+		close(sock);
+		free(resp_buf);
+		*err = HTTP_ERROR_MAKING_REQUEST;
+		return (HTTP_Response){0};
+	}
+
+	uint8_t buf[4096];
+	ssize_t n;
+	size_t ln = 0;
+	while ((n = recv(sock, buf, sizeof buf, 0)) > 0) {
+		if (ln + (size_t)n >= 1024 * 1024) break;
+		memcpy(resp_buf + ln, buf, (size_t)n);
+		ln += (size_t)n;
+	}
+
+	if (n < 0) {
+		close(sock);
+		free(resp_buf);
+		*err = HTTP_ERROR_MAKING_REQUEST;
+		return (HTTP_Response){0};
+	} 
+
+	if (ln < 1024 * 1024) resp_buf[ln] = '\0'; else resp_buf[1024*1024-1] = '\0';
+
+	HTTP_Error resp_err;
+	HTTP_Response resp = http_resp_parse(resp_buf, &resp_err);
+	if (resp_err != 0) {
+		free(resp_buf);
+		close(sock);
+		*err = resp_err;
+	}
+
+	free(resp_buf);
+	close(sock);
+	return resp;
+}
+
 HTTP_Request http_req_create() {
 	return (HTTP_Request) {NULL, 0, NULL, http_headers_create(0)};
 }
 
-HTTP_Request http_req_parse(uint8_t *bytes, bool *err) {
+HTTP_Request http_req_parse(uint8_t *bytes, HTTP_Error *err) {
 	HTTP_Request req = http_req_create();
 
 	char *str = (char *) bytes;
@@ -354,7 +480,7 @@ HTTP_Request http_req_parse(uint8_t *bytes, bool *err) {
 	// status line parsing
 	while (!(str[-1] == '\r' && *str == '\n')) {
 		if (*str == '\n') {
-			*err = true;
+			*err = HTTP_ERROR_PARSING_STATUS_LINE;
 			return req;
 		} else if (*str == ' ' || (*str == '\r' && str[1] == '\n')) {
 			char tmp = *str;
@@ -373,7 +499,7 @@ HTTP_Request http_req_parse(uint8_t *bytes, bool *err) {
 	str++;
 
 	if (req.method == NULL || req.target == NULL || req.protocol == NULL) {
-		*err = true;
+		*err = HTTP_ERROR_PARSING_STATUS_LINE;
 		return req;
 	}
 
@@ -384,7 +510,7 @@ HTTP_Request http_req_parse(uint8_t *bytes, bool *err) {
 
 		while (*str && !(*str == ':' && *(str+1) == ' ')) str++;
 		if (!*str) {
-			*err = true;
+			*err = HTTP_ERROR_PARSING_HEADERS;
 			return req;
 		}
 
@@ -397,7 +523,7 @@ HTTP_Request http_req_parse(uint8_t *bytes, bool *err) {
 
 		while (*str && !(str[0] == '\r' && str[1] == '\n')) str++;
 		if (!*str) {
-			*err = true;
+			*err = HTTP_ERROR_PARSING_HEADERS;
 			return req;
 		}
 
@@ -419,7 +545,7 @@ HTTP_Request http_req_parse(uint8_t *bytes, bool *err) {
 
 	req.body_len = atoll(content_length);
 	if (req.body_len == 0) {
-		*err = true;
+		*err = HTTP_ERROR_PARSING_HEADERS;
 		return req;
 	}
 
@@ -434,8 +560,9 @@ void http_req_add_header(HTTP_Request *hr, const char *key, const char *value) {
 }
 
 void http_req_set_status_line(HTTP_Request *hr, const char *method, const char *target) {
-	hr->method = (char *) method;
-	hr->target = (char *) target;
+	hr->method = strdup(method);
+	hr->target = strdup(target);
+	hr->protocol = strdup(PROTOCOL);
 }
 
 void http_req_set_body(HTTP_Request *hr, uint8_t *body, size_t len) {
@@ -472,7 +599,7 @@ HTTP_Response http_resp_create() {
 	return (HTTP_Response) {strdup(PROTOCOL), 0, NULL, http_headers_create(0)};
 }
 
-HTTP_Response http_resp_parse(uint8_t *bytes, bool *err) {
+HTTP_Response http_resp_parse(uint8_t *bytes, HTTP_Error *err) {
 	HTTP_Response resp = http_resp_create();
 
 	char *str = (char *) bytes;
@@ -482,7 +609,7 @@ HTTP_Response http_resp_parse(uint8_t *bytes, bool *err) {
 	// status line parsing
 	while (!(str[-1] == '\r' && *str == '\n')) {
 		if (*str == '\n') {
-			*err = true;
+			*err = HTTP_ERROR_PARSING_STATUS_LINE;
 			return resp;
 		} else if (*str == ' ' || (*str == '\r' && str[1] == '\n')) {
 			char tmp = *str;
@@ -501,7 +628,7 @@ HTTP_Response http_resp_parse(uint8_t *bytes, bool *err) {
 	str++;
 
 	if (resp.status_code == 0 || resp.reason_phrase == NULL || resp.protocol == NULL) {
-		*err = true;
+		*err = HTTP_ERROR_PARSING_STATUS_LINE;
 		return resp;
 	}
 
@@ -512,7 +639,7 @@ HTTP_Response http_resp_parse(uint8_t *bytes, bool *err) {
 
 		while (*str && !(*str == ':' && *(str+1) == ' ')) str++;
 		if (!*str) {
-			*err = true;
+			*err = HTTP_ERROR_PARSING_HEADERS;
 			return resp;
 		}
 
@@ -525,7 +652,7 @@ HTTP_Response http_resp_parse(uint8_t *bytes, bool *err) {
 
 		while (*str && !(str[0] == '\r' && str[1] == '\n')) str++;
 		if (!*str) {
-			*err = true;
+			*err = HTTP_ERROR_PARSING_HEADERS;
 			return resp;
 		}
 
@@ -547,12 +674,12 @@ HTTP_Response http_resp_parse(uint8_t *bytes, bool *err) {
 
 	resp.body_len = atoll(content_length);
 	if (resp.body_len == 0) {
-		*err = true;
+		*err = HTTP_ERROR_PARSING_HEADERS;
 		return resp;
 	}
 
 	resp.body = (uint8_t *) malloc(resp.body_len * sizeof(uint8_t));
-	memcpy(resp.body, str, resp.body_len * sizeof(uint8_t));
+	memcpy(resp.body, (uint8_t *) str, resp.body_len * sizeof(uint8_t));
 
 	return resp;
 }
@@ -613,8 +740,7 @@ static void http_server_grow_if_needed(HTTP_Server *serv) {
 	serv->hfs_cap = newcap;
 }
 
-void http_server_handle(HTTP_Server *serv, const char *target, HTTP_HandleFunc hf, void *ctx)
-{
+void http_server_handle(HTTP_Server *serv, const char *target, HTTP_HandleFunc hf, void *ctx) {
 	http_server_grow_if_needed(serv);
 	serv->targets[serv->hfs_count] = target;
 	serv->hfs[serv->hfs_count] = hf;
@@ -673,7 +799,7 @@ void http_server_run(HTTP_Server *serv) {
 		}
 		req_buf[rn] = '\0';
 
-		bool err = false;
+		HTTP_Error err;
 		HTTP_Response resp = http_resp_create();
 		HTTP_Request req = http_req_parse((uint8_t *) req_buf, &err);
 
