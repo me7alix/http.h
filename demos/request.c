@@ -1,4 +1,3 @@
-#include <stdio.h>
 #define HTTP_IMPLEMENTATION
 #include "../http.h"
 
