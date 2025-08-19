@@ -39,5 +39,3 @@ Include implementation as well (in **one .c file**):
 ## License
 
 MIT License
-
-```
