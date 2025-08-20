@@ -455,7 +455,7 @@ HTTP_Response http_make_request(HTTP_Request *req, const char *host, uint16_t po
 
 	HTTP_Error resp_err;
 	HTTP_Response resp = http_resp_parse(resp_buf, &resp_err);
-	if (resp_err != 0) {
+	if (resp_err) {
 		free(resp_buf);
 		close(sock);
 		*err = resp_err;
@@ -809,7 +809,7 @@ void http_server_run(HTTP_Server *serv) {
 		HTTP_Response resp = http_resp_create();
 		HTTP_Request req = http_req_parse(req_buf, &err);
 
-		if (err != 0) {
+		if (err) {
 			http_resp_set_status_line(&resp, STATUS_BAD_REQUEST, "Bad Request");
 			http_resp_add_header(&resp, "Connection", "close");
 			char *resp_str = http_resp_header_to_str(&resp);

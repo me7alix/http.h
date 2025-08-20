@@ -9,7 +9,7 @@ int main(void) {
 
 	HTTP_Error err;
 	HTTP_Response resp = http_make_request(&req, "icio.us", 80, &err);
-	if (err != 0) {
+	if (err) {
 		perror("request making error");
 		return 1;
 	}
