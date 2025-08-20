@@ -302,7 +302,6 @@ int http_server_serve_file(HTTP_Server *serv, const char *target, const char *co
 
 #endif // HTTP_H
 
-#define HTTP_IMPLEMENTATION
 #ifdef HTTP_IMPLEMENTATION
 
 // String
@@ -385,6 +384,7 @@ static ssize_t send_all(int sock, const void *buf, size_t len) {
 }
 
 HTTP_Response http_make_request(HTTP_Request *req, const char *host, uint16_t port, HTTP_Error *err) {
+	*err = HTTP_ERROR_NULL;
 	char *header = http_req_header_to_str(req);
 	if (!header) return (HTTP_Response){0};
 	size_t header_len = strlen(header);
@@ -472,6 +472,7 @@ HTTP_Request http_req_create() {
 
 HTTP_Request http_req_parse(uint8_t *bytes, HTTP_Error *err) {
 	HTTP_Request req = http_req_create();
+	*err = HTTP_ERROR_NULL;
 
 	char *str = (char *) bytes;
 	char *lp = str;
@@ -589,6 +590,9 @@ char *http_req_header_to_str(HTTP_Request *hr) {
 }
 
 void http_req_destroy(HTTP_Request *hr) {
+	free(hr->method);
+	free(hr->protocol);
+	free(hr->target);
 	http_headers_destroy(&hr->headers);
 	free(hr->body);
 }
@@ -601,6 +605,7 @@ HTTP_Response http_resp_create() {
 
 HTTP_Response http_resp_parse(uint8_t *bytes, HTTP_Error *err) {
 	HTTP_Response resp = http_resp_create();
+	*err = HTTP_ERROR_NULL;
 
 	char *str = (char *) bytes;
 	char *lp = str;
@@ -686,7 +691,7 @@ HTTP_Response http_resp_parse(uint8_t *bytes, HTTP_Error *err) {
 
 void http_resp_set_status_line(HTTP_Response *hr, uint16_t status_code, const char *reason_phrase) {
 	hr->status_code = status_code;
-	hr->reason_phrase = (char *) reason_phrase;
+	hr->reason_phrase = strdup(reason_phrase);
 }
 
 void http_resp_set_body(HTTP_Response *hr, uint8_t *body, size_t len) {
@@ -717,6 +722,8 @@ char *http_resp_header_to_str(HTTP_Response *hr) {
 }
 
 void http_resp_destroy(HTTP_Response *hr) {
+	free(hr->reason_phrase);
+	free(hr->protocol);
 	http_headers_destroy(&hr->headers);
 	free(hr->body);
 }
@@ -791,24 +798,22 @@ void http_server_run(HTTP_Server *serv) {
 			perror("accept"); break;
 		}
 
-		char req_buf[1024 * 16];
+		uint8_t req_buf[1024 * 16];
 		ssize_t rn = recv(c, req_buf, sizeof(req_buf) - 1, 0);
 		if (rn <= 0) {
 			close(c);
 			continue;
 		}
-		req_buf[rn] = '\0';
 
 		HTTP_Error err;
 		HTTP_Response resp = http_resp_create();
-		HTTP_Request req = http_req_parse((uint8_t *) req_buf, &err);
+		HTTP_Request req = http_req_parse(req_buf, &err);
 
-		if (err) {
-			http_resp_set_status_line(&resp, STATUS_BAD_REQUEST, "");
+		if (err != 0) {
+			http_resp_set_status_line(&resp, STATUS_BAD_REQUEST, "Bad Request");
 			http_resp_add_header(&resp, "Connection", "close");
 			char *resp_str = http_resp_header_to_str(&resp);
 			write(c, resp_str, strlen(resp_str));
-			free(resp_str);
 		} else {
 			bool handled = false;
 			for (size_t i = 0; i < serv->hfs_count; i++) {
@@ -821,7 +826,6 @@ void http_server_run(HTTP_Server *serv) {
 
 					char *resp_str = http_resp_header_to_str(&resp);
 					write(c, resp_str, strlen(resp_str));
-					free(resp_str);
 
 					write(c, resp.body, resp.body_len);
 					handled = true;
@@ -834,12 +838,10 @@ void http_server_run(HTTP_Server *serv) {
 
 				char *not_found_msg = strdup("404 Not Found");
 				http_resp_set_body(&resp, (uint8_t *) not_found_msg, strlen(not_found_msg));
-				free(not_found_msg);
 
 				char *resp_str = http_resp_header_to_str(&resp);
 				write(c, resp_str, strlen(resp_str));
 				write(c, resp.body, resp.body_len);
-				free(resp_str);
 			}
 		}
 

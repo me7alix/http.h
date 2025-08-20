@@ -21,7 +21,7 @@ int main(void) {
 	signal(SIGPIPE, SIG_IGN);
 	srand(time(0));
 
-	HTTP_Server serv = http_server_create(8080);
+	HTTP_Server serv = http_server_create(3000);
 
 	http_server_handle(&serv, "/randnum", randnum_handler, NULL);
 
