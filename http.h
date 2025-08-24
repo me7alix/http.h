@@ -213,16 +213,16 @@ typedef struct {
 	char   *str;
 	size_t	cnt;
 	size_t	cap;
-} StringBuilder;
+} HTTP_StringBuilder;
 
-StringBuilder sb_create(size_t cap);
-void sb_ensure_capacity(StringBuilder *sb, size_t extra);
-void sb_append_str(StringBuilder *sb, const char *s);
-void sb_append_strf(StringBuilder *sb, const char *fmt, ...);
-void sb_append_char(StringBuilder *sb, char ch);
-void sb_reset(StringBuilder *sb);
-void sb_destroy(StringBuilder *sb);
-char *sb_to_str(StringBuilder sb);
+HTTP_StringBuilder http_sb_create(size_t cap);
+void http_sb_ensure_capacity(HTTP_StringBuilder *sb, size_t extra);
+void http_sb_append_str(HTTP_StringBuilder *sb, const char *s);
+void http_sb_append_strf(HTTP_StringBuilder *sb, const char *fmt, ...);
+void http_sb_append_char(HTTP_StringBuilder *sb, char ch);
+void http_sb_reset(HTTP_StringBuilder *sb);
+void http_sb_destroy(HTTP_StringBuilder *sb);
+char *http_sb_to_str(HTTP_StringBuilder sb);
 
 // HTTP
 
@@ -575,18 +575,18 @@ void http_req_set_body(HTTP_Request *hr, uint8_t *body, size_t len) {
 }
 
 char *http_req_header_to_str(HTTP_Request *hr) {
-	StringBuilder str = sb_create(128);
-	sb_append_strf(&str, "%s %s %s\r\n", hr->method, hr->target, hr->protocol);
+	HTTP_StringBuilder str = http_sb_create(128);
+	http_sb_append_strf(&str, "%s %s %s\r\n", hr->method, hr->target, hr->protocol);
 
 	for (size_t i = 0; i < hr->headers.count; i++) {
-		sb_append_strf(
+		http_sb_append_strf(
 				&str, "%s: %s\r\n",
 				hr->headers.headers[i].key,
 				hr->headers.headers[i].value);
 	}
 
-	sb_append_str(&str, "\r\n");
-	return sb_to_str(str);
+	http_sb_append_str(&str, "\r\n");
+	return http_sb_to_str(str);
 }
 
 void http_req_destroy(HTTP_Request *hr) {
@@ -707,18 +707,18 @@ void http_resp_add_header(HTTP_Response *hr, const char *key, const char *value)
 }
 
 char *http_resp_header_to_str(HTTP_Response *hr) {
-	StringBuilder str = sb_create(128);
-	sb_append_strf(&str, "%s %i %s\r\n", hr->protocol, (int)hr->status_code, hr->reason_phrase);
+	HTTP_StringBuilder str = http_sb_create(128);
+	http_sb_append_strf(&str, "%s %i %s\r\n", hr->protocol, (int)hr->status_code, hr->reason_phrase);
 
 	for (size_t i = 0; i < hr->headers.count; i++) {
-		sb_append_strf(
+		http_sb_append_strf(
 				&str, "%s: %s\r\n",
 				hr->headers.headers[i].key,
 				hr->headers.headers[i].value);
 	}
 
-	sb_append_str(&str, "\r\n");
-	return sb_to_str(str);
+	http_sb_append_str(&str, "\r\n");
+	return http_sb_to_str(str);
 }
 
 void http_resp_destroy(HTTP_Response *hr) {
@@ -919,8 +919,8 @@ int http_server_serve_file(HTTP_Server *serv, const char *target, const char *co
 
 // SB_IMPLEMENTATION
 
-StringBuilder sb_create(size_t cap) {
-	StringBuilder sb;
+HTTP_StringBuilder http_sb_create(size_t cap) {
+	HTTP_StringBuilder sb;
 	if (cap == 0) cap = 32;
 	sb.str = (char *) malloc(cap);
 	sb.cnt = 0;
@@ -929,7 +929,7 @@ StringBuilder sb_create(size_t cap) {
 	return sb;
 }
 
-void sb_ensure_capacity(StringBuilder *sb, size_t extra) {
+void http_sb_ensure_capacity(HTTP_StringBuilder *sb, size_t extra) {
 	size_t required = sb->cnt + extra + 1;
 	if (required <= sb->cap) return;
 	while (sb->cap < required) {
@@ -938,15 +938,15 @@ void sb_ensure_capacity(StringBuilder *sb, size_t extra) {
 	sb->str = (char *) realloc(sb->str, sb->cap);
 }
 
-void sb_append_str(StringBuilder *sb, const char *s) {
+void http_sb_append_str(HTTP_StringBuilder *sb, const char *s) {
 	size_t len = strlen(s);
-	sb_ensure_capacity(sb, len);
+	http_sb_ensure_capacity(sb, len);
 	memcpy(sb->str + sb->cnt, s, len);
 	sb->cnt += len;
 	sb->str[sb->cnt] = '\0';
 }
 
-void sb_append_strf(StringBuilder *sb, const char *fmt, ...) {
+void http_sb_append_strf(HTTP_StringBuilder *sb, const char *fmt, ...) {
 	va_list args, args_copy;
 	va_start(args, fmt);
 
@@ -960,7 +960,7 @@ void sb_append_strf(StringBuilder *sb, const char *fmt, ...) {
 		return;
 	}
 
-	sb_ensure_capacity(sb, (size_t)len);
+	http_sb_ensure_capacity(sb, (size_t)len);
 
 	vsnprintf(sb->str + sb->cnt, sb->cap - sb->cnt, fmt, args_copy);
 	sb->cnt += (size_t)len;
@@ -968,22 +968,22 @@ void sb_append_strf(StringBuilder *sb, const char *fmt, ...) {
 	va_end(args_copy);
 }
 
-void sb_append_char(StringBuilder *sb, char ch) {
-	sb_ensure_capacity(sb, 1);
+void http_sb_append_char(HTTP_StringBuilder *sb, char ch) {
+	http_sb_ensure_capacity(sb, 1);
 	sb->str[sb->cnt++] = ch;
 	sb->str[sb->cnt] = '\0';
 }
 
-void sb_reset(StringBuilder *sb) {
+void http_sb_reset(HTTP_StringBuilder *sb) {
 	sb->cnt = 0;
 	if (sb->str) sb->str[0] = '\0';
 }
 
-char *sb_to_str(StringBuilder sb) {
+char *http_sb_to_str(HTTP_StringBuilder sb) {
 	return sb.str;
 }
 
-void sb_destroy(StringBuilder *sb) {
+void http_sb_destroy(HTTP_StringBuilder *sb) {
 	free(sb->str);
 	sb->str = NULL;
 	sb->cnt = sb->cap = 0;
